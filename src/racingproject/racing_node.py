@@ -151,7 +151,7 @@ class RacingNode(Node):
 
         msg = Vector3Stamped()
         msg.header.stamp = now.to_msg()
-        msg.header.frame_id = "Chadol"
+        msg.header.frame_id = "Team8"
         msg.vector.x = throttle
         msg.vector.y = steer_cmd
         msg.vector.z = brake

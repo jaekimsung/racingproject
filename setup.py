@@ -16,7 +16,7 @@ setup(
     zip_safe=True,
     maintainer="Chadol Team",
     maintainer_email="user@example.com",
-    description="Racing controller for Carla with PID speed control and MPC steering.",
+    description="Racing controller for SKKU Mobile System Control.",
     license="Apache-2.0",
     tests_require=["pytest"],
     entry_points={
