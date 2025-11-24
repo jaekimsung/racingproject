@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from typing import Tuple
 
@@ -57,9 +58,18 @@ class PathManager:
         Returns:
             np.ndarray of shape (N, 2).
         """
-        data = np.loadtxt(csv_path, delimiter=",")
-        if data.ndim == 1:
-            raise ValueError("CSV must contain at least two columns for x and y.")
+        if not os.path.exists(csv_path):
+            raise FileNotFoundError(f"CSV path does not exist: {csv_path}")
+
+        try:
+            data = np.loadtxt(csv_path, delimiter=",")
+        except ValueError:
+            # Fallback when a header row (e.g., "x,y") is present.
+            data = np.loadtxt(csv_path, delimiter=",", skiprows=1)
+
+        data = np.atleast_2d(data)
+        if data.shape[1] < 2:
+            raise ValueError("CSV must contain at least two numeric columns for x and y.")
         return data[:, :2]
 
     @staticmethod

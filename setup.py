@@ -11,8 +11,10 @@ setup(
     data_files=[
         ("share/ament_index/resource_index/packages", ["resource/" + package_name]),
         ("share/" + package_name, ["package.xml"]),
+        ("share/" + package_name + "/data", ["src/racingproject/data/waypoints.csv"]),
+        ("share/" + package_name + "/launch", ["src/launch/racing_launch.py"]),
     ],
-    install_requires=["setuptools", "numpy", "scipy", "cvxpy", "rclpy"],
+    install_requires=["setuptools", "numpy", "scipy", "cvxpy", "rclpy", "ament_index_python"],
     zip_safe=True,
     maintainer="Chadol Team",
     maintainer_email="user@example.com",

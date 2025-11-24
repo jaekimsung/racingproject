@@ -7,9 +7,13 @@ from typing import Optional, Tuple
 
 import numpy as np
 import rclpy
-from geometry_msgs.msg import Vector3Stamped
+from ament_index_python.packages import PackageNotFoundError, get_package_share_directory
+from geometry_msgs.msg import Point, PoseStamped, Quaternion, Vector3Stamped
+from pathlib import Path
+from nav_msgs.msg import Path as PathMsg
 from rclpy.node import Node
 from std_msgs.msg import Float32MultiArray
+from visualization_msgs.msg import Marker, MarkerArray
 
 from .path_manager import PathManager, PathParams
 from .speed_pid import SpeedPID
@@ -52,13 +56,12 @@ class RacingNode(Node):
                 ("control_dt", 0.05), # - control_dt: 제어 주기/샘플 타임 [s]
                 ("max_steer_deg", 20.0), # - max_steer_deg: 최대 조향각 [deg]
                 ("max_steer_rate_deg", 45.0), # - max_steer_rate_deg: 최대 조향각 속도 [deg/s]
-                ("wheelbase", 2.7), # - wheelbase: 휠베이스 길이 [m]
+                ("wheelbase", 1.023), # - wheelbase: 휠베이스 길이 [m]
             ],
         )
 
-        path_csv = self.get_parameter("path_csv").get_parameter_value().string_value
-        if not path_csv:
-            self.get_logger().warn("Parameter 'path_csv' is empty. Node will not run without a path.")
+        path_csv_param = self.get_parameter("path_csv").get_parameter_value().string_value
+        path_csv = self._resolve_path_csv(path_csv_param)
 
         path_params = PathParams(
             sample_ds=float(self.get_parameter("sample_ds").value),
@@ -70,11 +73,15 @@ class RacingNode(Node):
         )
 
         self.path_manager: Optional[PathManager] = None
-        try:
-            self.path_manager = PathManager(path_csv, path_params)
-            self.get_logger().info(f"Loaded path from {path_csv} with {len(self.path_manager.racing_xy)} points.")
-        except Exception as exc:
-            self.get_logger().error(f"Failed to initialize PathManager: {exc}")
+        if path_csv:
+            try:
+                self.path_manager = PathManager(path_csv, path_params)
+                self.get_logger().info(f"Loaded path from {path_csv} with {len(self.path_manager.racing_xy)} points.")
+                self._prepare_visualization_msgs()
+            except Exception as exc:
+                self.get_logger().error(f"Failed to initialize PathManager: {exc}")
+        else:
+            self.get_logger().warn("No path CSV could be resolved. Set parameter 'path_csv' to begin.")
 
         self.speed_pid = SpeedPID(
             kp=float(self.get_parameter("speed_kp").value),
@@ -103,10 +110,16 @@ class RacingNode(Node):
             10,
         )
         self.cmd_pub = self.create_publisher(Vector3Stamped, "/mobile_system_control/control_msg", 10)
+        self.path_pub = self.create_publisher(PathMsg, "/mobile_system_control/racing_path", 1)
+        self.pose_pub = self.create_publisher(PathMsg, "/mobile_system_control/ego_pose_path", 1)
+        self.decel_marker_pub = self.create_publisher(MarkerArray, "/mobile_system_control/decel_zones", 1)
         self.timer = self.create_timer(self.control_dt, self.control_loop)
 
         self.current_state: Optional[Tuple[float, float, float, float, float]] = None
         self.last_time = self.get_clock().now()
+        self.racing_path_msg: Optional[PathMsg] = None
+        self.decel_markers: Optional[MarkerArray] = None
+        self.pose_path_msg = PathMsg()
 
     def state_callback(self, msg: Float32MultiArray) -> None:
         """Store the latest ego state from the simulator."""
@@ -157,6 +170,22 @@ class RacingNode(Node):
         msg.vector.z = brake
         self.cmd_pub.publish(msg)
 
+        if self.racing_path_msg is not None:
+            self.racing_path_msg.header.stamp = now.to_msg()
+            self.path_pub.publish(self.racing_path_msg)
+        if self.decel_markers is not None:
+            for marker in self.decel_markers.markers:
+                marker.header.stamp = now.to_msg()
+            self.decel_marker_pub.publish(self.decel_markers)
+
+        pose_msg = self._pose_stamped(x, y, theta, now)
+        self.pose_path_msg.header.stamp = now.to_msg()
+        self.pose_path_msg.header.frame_id = "map"
+        self.pose_path_msg.poses.append(pose_msg)
+        if len(self.pose_path_msg.poses) > 500:
+            self.pose_path_msg.poses = self.pose_path_msg.poses[-500:]
+        self.pose_pub.publish(self.pose_path_msg)
+
     def _compute_errors(self, path_segment: np.ndarray, x: float, y: float, theta: float) -> Tuple[float, float]:
         """
         Compute lateral and heading error to the first segment of the lookahead path.
@@ -175,6 +204,89 @@ class RacingNode(Node):
             path_yaw = math.atan2(dy, dx)
         e_psi = wrap_angle(path_yaw - theta)
         return e_y, e_psi
+
+    def _resolve_path_csv(self, param_value: str) -> str:
+        """
+        Resolve the path CSV location, preferring an explicit parameter then packaged default.
+        """
+        if param_value:
+            return param_value
+
+        candidates = []
+        try:
+            share_dir = get_package_share_directory("racingproject")
+            candidates.append(Path(share_dir) / "data" / "waypoints.csv")
+        except (PackageNotFoundError, Exception):
+            pass
+
+        candidates.append(Path(__file__).resolve().parent / "data" / "waypoints.csv")
+
+        for candidate in candidates:
+            if candidate.exists():
+                self.get_logger().info(f"Using packaged path CSV at {candidate}")
+                return str(candidate)
+
+        self.get_logger().warn(
+            "Could not find default waypoints.csv. Please set 'path_csv' parameter to a valid CSV file."
+        )
+        return ""
+
+    def _prepare_visualization_msgs(self) -> None:
+        """Precompute static visualization messages for RViz."""
+        if self.path_manager is None:
+            return
+
+        self.racing_path_msg = PathMsg()
+        self.racing_path_msg.header.frame_id = "map"
+        xy = self.path_manager.racing_xy
+        headings = self._path_headings(xy)
+        now = self.get_clock().now()
+        for (px, py), yaw in zip(xy, headings):
+            self.racing_path_msg.poses.append(self._pose_stamped(px, py, yaw, now))
+
+        kappa = np.abs(self.path_manager.kappa_racing)
+        mask = kappa > self.kappa_th
+        decel_points = xy[mask]
+        marker = Marker()
+        marker.header.frame_id = "map"
+        marker.ns = "decel_zones"
+        marker.id = 0
+        marker.type = Marker.SPHERE_LIST
+        marker.action = Marker.ADD
+        marker.scale.x = 0.5
+        marker.scale.y = 0.5
+        marker.scale.z = 0.1
+        marker.color.r = 1.0
+        marker.color.g = 0.4
+        marker.color.b = 0.0
+        marker.color.a = 0.8
+        marker.points = [self._point(px, py) for px, py in decel_points]
+        self.decel_markers = MarkerArray(markers=[marker])
+
+    @staticmethod
+    def _point(x: float, y: float):
+        return Point(x=x, y=y, z=0.0)
+
+    @staticmethod
+    def _path_headings(xy: np.ndarray) -> np.ndarray:
+        """Approximate heading at each point of the path."""
+        if len(xy) < 2:
+            return np.zeros(len(xy))
+        diffs = np.diff(xy, axis=0, append=xy[-1:])
+        return np.arctan2(diffs[:, 1], diffs[:, 0])
+
+    @staticmethod
+    def _pose_stamped(x: float, y: float, yaw: float, stamp) -> PoseStamped:
+        qz = math.sin(yaw * 0.5)
+        qw = math.cos(yaw * 0.5)
+        pose_msg = PoseStamped()
+        pose_msg.header.stamp = stamp.to_msg()
+        pose_msg.header.frame_id = "map"
+        pose_msg.pose.position.x = x
+        pose_msg.pose.position.y = y
+        pose_msg.pose.position.z = 0.0
+        pose_msg.pose.orientation = Quaternion(x=0.0, y=0.0, z=qz, w=qw)
+        return pose_msg
 
 
 def main(args=None) -> None:
