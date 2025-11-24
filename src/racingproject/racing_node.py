@@ -29,25 +29,30 @@ class RacingNode(Node):
         self.declare_parameters(
             "",
             [
-                ("path_csv", ""),
-                ("sample_ds", 0.5),
-                ("max_offset", 3.0),
-                ("offset_gain", 1.0),
-                ("offset_power", 1.0),
-                ("curvature_smooth_window", 11),
-                ("lookahead_points", 30),
-                ("speed_kp", 0.5),
+                ("path_csv", ""), # 기준 경로 CSV 파일 경로
+                ("sample_ds", 0.5), # - sample_ds: 경로 리샘플 간격 [m]
+                
+                ("max_offset", 3.0), # - max_offset: 곡률 기반 레이싱 라인 최대 횡방향 오프셋 [m]
+                ("offset_gain", 1.0), # - offset_gain: 곡률→오프셋 스케일
+                ("offset_power", 1.0), # - offset_power: 곡률 정규화 후 거듭제곱 (비선형성)
+                ("curvature_smooth_window", 11), # - curvature_smooth_window: 곡률 이동 평균 창 크기
+                ("lookahead_points", 30), # - lookahead_points: 제어 시 앞쪽으로 볼 포인트 개수
+                
+                ("speed_kp", 0.5), # - speed_kp/ki/kd: 속도 PID 게인
                 ("speed_ki", 0.1),
                 ("speed_kd", 0.01),
-                ("v_high", 15.0),
+                
+                ("v_high", 15.0), # - v_high/v_low: 직선/코너에서 목표 속도 [m/s]
                 ("v_low", 8.0),
-                ("kappa_th", 0.05),
-                ("mpc_Np", 10),
-                ("mpc_Nc", 5),
-                ("control_dt", 0.05),
-                ("max_steer_deg", 20.0),
-                ("max_steer_rate_deg", 45.0),
-                ("wheelbase", 2.7),
+                
+                ("kappa_th", 0.05), # - kappa_th: 코너 판단용 곡률 임계값
+                
+                ("mpc_Np", 10), # - mpc_Np: MPC 예측 지평선 길이
+                ("mpc_Nc", 5), # - mpc_Nc: MPC 제어 지평선 길이
+                ("control_dt", 0.05), # - control_dt: 제어 주기/샘플 타임 [s]
+                ("max_steer_deg", 20.0), # - max_steer_deg: 최대 조향각 [deg]
+                ("max_steer_rate_deg", 45.0), # - max_steer_rate_deg: 최대 조향각 속도 [deg/s]
+                ("wheelbase", 2.7), # - wheelbase: 휠베이스 길이 [m]
             ],
         )
 

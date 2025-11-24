@@ -1,4 +1,4 @@
-"""Simple PID controller for longitudinal speed regulation."""
+"""PID controller for longitudinal speed regulation."""
 
 from __future__ import annotations
 

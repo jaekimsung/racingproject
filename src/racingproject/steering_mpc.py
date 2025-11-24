@@ -47,13 +47,44 @@ class SteeringMPC:
         B[2, 0] = self.dt  # steering rate affects delta
         return A, B
 
+    def _path_yaw_and_curvature(self, path_segment_xy: np.ndarray, horizon: int) -> tuple[np.ndarray, np.ndarray]:
+        """Compute reference yaw and curvature sequences from a local path segment."""
+        if path_segment_xy.shape[0] < 2:
+            # Degenerate path; zero references.
+            return np.zeros(horizon), np.zeros(horizon)
+
+        diffs = np.diff(path_segment_xy, axis=0)
+        headings = np.arctan2(diffs[:, 1], diffs[:, 0])
+        # Duplicate last heading to match point count.
+        headings = np.concatenate([headings, headings[-1:]])
+
+        # Arc length between points.
+        ds = np.hypot(diffs[:, 0], diffs[:, 1])
+        ds = np.maximum(ds, 1e-3)
+        # Approximate curvature as heading change per distance.
+        dpsi = np.diff(headings, prepend=headings[0])
+        curvature = dpsi / np.concatenate([ds, ds[-1:]])
+
+        # Repeat or trim to horizon length.
+        yaw_ref = np.interp(
+            np.linspace(0, len(headings) - 1, num=horizon, endpoint=False),
+            np.arange(len(headings)),
+            headings,
+        )
+        kappa_ref = np.interp(
+            np.linspace(0, len(curvature) - 1, num=horizon, endpoint=False),
+            np.arange(len(curvature)),
+            curvature,
+        )
+        return yaw_ref, kappa_ref
+
     def solve(self, state: np.ndarray, path_segment_xy: np.ndarray, v_ref: float) -> float:
         """
         Solve the MPC problem for the next steering command.
 
         Args:
             state: [e_y, e_psi, delta, v(optional)].
-            path_segment_xy: unused placeholder for future enhancements.
+            path_segment_xy: local path points for reference yaw/curvature.
             v_ref: nominal speed for linearization.
 
         Returns:
@@ -74,16 +105,23 @@ class SteeringMPC:
         x = cp.Variable((3, self.Np + 1))
         u = cp.Variable((1, self.Nc))
 
+        # Build reference sequences.
+        yaw_ref, kappa_ref = self._path_yaw_and_curvature(path_segment_xy, self.Np)
+        yaw_ref -= yaw_ref[0]  # make first yaw zero to align with current error frame
+        delta_ref = np.clip(np.arctan(self.wheelbase * kappa_ref), -self.max_steer, self.max_steer)
+
         cost = 0
         constraints = [x[:, [0]] == x0]
         for k in range(self.Np):
             if k < self.Nc:
-                cost += cp.quad_form(x[:, k], self.Q) + cp.quad_form(u[:, k], self.R)
+                x_ref_k = np.array([[0.0], [yaw_ref[k]], [delta_ref[k]]])
+                cost += cp.quad_form(x[:, k] - x_ref_k, self.Q) + cp.quad_form(u[:, k], self.R)
                 constraints.append(cp.abs(u[:, k]) <= self.max_steer_rate)
                 constraints.append(cp.abs(x[2, k] + self.dt * u[:, k]) <= self.max_steer)
                 constraints.append(x[:, [k + 1]] == A @ x[:, [k]] + B @ u[:, [k]])
             else:
-                cost += cp.quad_form(x[:, k], self.Q)
+                x_ref_k = np.array([[0.0], [yaw_ref[min(k, len(yaw_ref) - 1)]], [delta_ref[min(k, len(delta_ref) - 1)]]])
+                cost += cp.quad_form(x[:, k] - x_ref_k, self.Q)
                 constraints.append(x[:, [k + 1]] == A @ x[:, [k]])
 
         problem = cp.Problem(cp.Minimize(cost), constraints)
