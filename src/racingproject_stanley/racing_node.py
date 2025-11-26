@@ -167,15 +167,21 @@ class RacingNodeStanley(Node):
         e_y, e_psi = self._compute_errors(path_segment, x, y, theta)
         kappa_ref = float(self.path_kappa[idx]) if self.path_kappa is not None else 0.0
         steer_cmd = self.stanley.compute(e_y, e_psi, kappa_ref, v_meas, delta_meas, dt)
+        steer_norm = float(np.clip(steer_cmd / max(self.max_steer, 1e-6), -1.0, 1.0))
 
         # Log target speed and steering command for each control cycle.
-        print(f"[STANLEY CONTROL] v_ref={v_ref:.2f} m/s, steer_cmd={steer_cmd:.3f} rad, e_y={e_y:.2f} m")
+        steer_deg = math.degrees(steer_cmd)
+        print(
+            f"[STANLEY CONTROL] v_ref={v_ref:.2f} m/s, v={v_meas:.2f} m/s, "
+            f"steer_cmd={steer_cmd:.3f} rad ({steer_deg:.2f} deg) "
+            f"(norm={steer_norm:.3f}), e_y={e_y:.2f} m"
+        )
 
         msg = Vector3Stamped()
         msg.header.stamp = now.to_msg()
         msg.header.frame_id = "Team8"
         msg.vector.x = throttle
-        msg.vector.y = steer_cmd
+        msg.vector.y = steer_norm
         msg.vector.z = brake
         self.cmd_pub.publish(msg)
         print(msg)

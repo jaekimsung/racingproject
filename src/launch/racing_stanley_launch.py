@@ -9,7 +9,7 @@ from launch_ros.actions import Node
 
 def generate_launch_description() -> LaunchDescription:
     pkg_share = Path(get_package_share_directory("racingproject"))
-    default_csv = pkg_share / "data" / "waypoints.csv"
+    default_csv = pkg_share / "data" / "optimal_trajectory_xy.csv"
 
     path_csv = LaunchConfiguration("path_csv")
 
