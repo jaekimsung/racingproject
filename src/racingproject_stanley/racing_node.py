@@ -1,23 +1,24 @@
-"""ROS2 node wiring together path management, speed PID, and steering MPC."""
+"""ROS2 node wiring path handling, speed PID, and Stanley steering control."""
 
 from __future__ import annotations
 
 import math
+from pathlib import Path
 from typing import Optional, Tuple
 
 import numpy as np
 import rclpy
 from ament_index_python.packages import PackageNotFoundError, get_package_share_directory
 from geometry_msgs.msg import Point, PoseStamped, Quaternion, Vector3Stamped
-from pathlib import Path
 from nav_msgs.msg import Path as PathMsg
 from rclpy.node import Node
 from rclpy.qos import QoSDurabilityPolicy, QoSProfile, QoSReliabilityPolicy
 from std_msgs.msg import Float32MultiArray
 from visualization_msgs.msg import Marker, MarkerArray
 
-from .speed_pid import SpeedPID
-from .steering_mpc import SteeringMPC
+from racingproject.speed_pid import SpeedPID
+
+from .stanley_controller import StanleyController
 
 
 def wrap_angle(angle: float) -> float:
@@ -25,32 +26,29 @@ def wrap_angle(angle: float) -> float:
     return (angle + math.pi) % (2 * math.pi) - math.pi
 
 
-class RacingNode(Node):
-    """Main ROS2 node handling perception of vehicle state and control outputs."""
+class RacingNodeStanley(Node):
+    """Main ROS2 node using Stanley lateral control."""
 
     def __init__(self):
-        super().__init__("racing_node")
+        super().__init__("racing_node_stanley")
         self.declare_parameters(
             "",
             [
-                ("path_csv", ""), # 기준 경로 CSV 파일 경로
-                ("lookahead_points", 30), # - lookahead_points: 제어 시 앞쪽으로 볼 포인트 개수
-                
-                ("speed_kp", 0.5), # - speed_kp/ki/kd: 속도 PID 게인
+                ("path_csv", ""),  # 기준 경로 CSV 파일 경로
+                ("lookahead_distance", 15.0),  # - lookahead_distance: 제어 시 앞쪽으로 볼 거리 [m]
+                ("speed_kp", 0.5),  # - speed_kp/ki/kd: 속도 PID 게인
                 ("speed_ki", 0.1),
                 ("speed_kd", 0.01),
-                
-                ("v_high", 15.0), # - v_high/v_low: 직선/코너에서 목표 속도 [m/s]
+                ("v_high", 15.0),  # - v_high/v_low: 직선/코너에서 목표 속도 [m/s]
                 ("v_low", 8.0),
-                
-                ("kappa_th", 0.05), # - kappa_th: 코너 판단용 곡률 임계값
-                
-                ("mpc_Np", 10), # - mpc_Np: MPC 예측 지평선 길이
-                ("mpc_Nc", 5), # - mpc_Nc: MPC 제어 지평선 길이
-                ("control_dt", 0.05), # - control_dt: 제어 주기/샘플 타임 [s]
-                ("max_steer_deg", 20.0), # - max_steer_deg: 최대 조향각 [deg]
-                ("max_steer_rate_deg", 45.0), # - max_steer_rate_deg: 최대 조향각 속도 [deg/s]
-                ("wheelbase", 1.023), # - wheelbase: 휠베이스 길이 [m]
+                ("kappa_th", 0.05),  # - kappa_th: 코너 판단용 곡률 임계값
+                ("control_dt", 0.05),  # - control_dt: 제어 주기/샘플 타임 [s]
+                ("max_steer_deg", 20.0),  # - max_steer_deg: 최대 조향각 [deg]
+                ("max_steer_rate_deg", 45.0),  # - max_steer_rate_deg: 최대 조향각 속도 [deg/s]
+                ("wheelbase", 1.023),  # - wheelbase: 휠베이스 길이 [m]
+                ("stanley_k", 1.5),  # - stanley_k: 횡방향 오차 게인
+                ("stanley_softening", 0.1),  # - stanley_softening: 저속에서의 소프트닝 항 [m/s]
+                ("stanley_heading_gain", 1.0),  # - stanley_heading_gain: 헤딩 오차 가중치
             ],
         )
 
@@ -62,7 +60,11 @@ class RacingNode(Node):
         self.v_low = float(self.get_parameter("v_low").value)
         self.kappa_th = float(self.get_parameter("kappa_th").value)
         self.control_dt = float(self.get_parameter("control_dt").value)
-        self.lookahead_points = int(self.get_parameter("lookahead_points").value)
+        self.lookahead_distance = float(self.get_parameter("lookahead_distance").value)
+
+        self.max_steer = math.radians(float(self.get_parameter("max_steer_deg").value))
+        self.max_steer_rate = math.radians(float(self.get_parameter("max_steer_rate_deg").value))
+        self.wheelbase = float(self.get_parameter("wheelbase").value)
 
         self.path_xy: Optional[np.ndarray] = None
         self.path_kappa: Optional[np.ndarray] = None
@@ -73,7 +75,7 @@ class RacingNode(Node):
                 self.get_logger().info(f"Loaded path from {path_csv} with {len(self.path_xy)} points.")
                 self._prepare_visualization_msgs()
             except Exception as exc:
-                self.get_logger().error(f"Failed to initialize PathManager: {exc}")
+                self.get_logger().error(f"Failed to initialize path: {exc}")
         else:
             self.get_logger().warn("No path CSV could be resolved. Set parameter 'path_csv' to begin.")
 
@@ -83,13 +85,13 @@ class RacingNode(Node):
             kd=float(self.get_parameter("speed_kd").value),
         )
 
-        self.mpc = SteeringMPC(
-            Np=int(self.get_parameter("mpc_Np").value),
-            Nc=int(self.get_parameter("mpc_Nc").value),
-            dt=float(self.get_parameter("control_dt").value),
-            max_steer=math.radians(float(self.get_parameter("max_steer_deg").value)),
-            max_steer_rate=math.radians(float(self.get_parameter("max_steer_rate_deg").value)),
-            wheelbase=float(self.get_parameter("wheelbase").value),
+        self.stanley = StanleyController(
+            k=float(self.get_parameter("stanley_k").value),
+            ks=float(self.get_parameter("stanley_softening").value),
+            heading_gain=float(self.get_parameter("stanley_heading_gain").value),
+            max_steer=self.max_steer,
+            max_steer_rate=self.max_steer_rate,
+            wheelbase=self.wheelbase,
         )
 
         self.state_sub = self.create_subscription(
@@ -151,9 +153,7 @@ class RacingNode(Node):
             return
 
         idx = self._find_closest_index(x, y)
-        segment_indices = np.arange(idx, idx + self.lookahead_points) % len(self.path_xy)
-        path_segment = self.path_xy[segment_indices]
-        kappa_segment = self.path_kappa[segment_indices]
+        path_segment, kappa_segment = self._segment_by_distance(idx, self.lookahead_distance)
 
         if len(path_segment) < 2:
             self.get_logger().warn("Path segment too short for control.")
@@ -165,11 +165,11 @@ class RacingNode(Node):
         throttle, brake = self.speed_pid.step(v_ref, v_meas, dt)
 
         e_y, e_psi = self._compute_errors(path_segment, x, y, theta)
-        mpc_state = np.array([e_y, e_psi, delta_meas, v_meas], dtype=float)
-        steer_cmd = self.mpc.solve(mpc_state, path_segment, v_ref)
+        kappa_ref = float(self.path_kappa[idx]) if self.path_kappa is not None else 0.0
+        steer_cmd = self.stanley.compute(e_y, e_psi, kappa_ref, v_meas, delta_meas, dt)
 
         # Log target speed and steering command for each control cycle.
-        print(f"[CONTROL] v_ref={v_ref:.2f} m/s, steer_cmd={steer_cmd:.3f} rad")
+        print(f"[STANLEY CONTROL] v_ref={v_ref:.2f} m/s, steer_cmd={steer_cmd:.3f} rad, e_y={e_y:.2f} m")
 
         msg = Vector3Stamped()
         msg.header.stamp = now.to_msg()
@@ -237,12 +237,14 @@ class RacingNode(Node):
             return param_value
 
         candidates = []
-        try:
-            share_dir = get_package_share_directory("racingproject")
-            candidates.append(Path(share_dir) / "data" / "waypoints.csv")
-        except (PackageNotFoundError, Exception):
-            pass
+        for pkg in ("racingproject_stanley", "racingproject"):
+            try:
+                share_dir = get_package_share_directory(pkg)
+                candidates.append(Path(share_dir) / "data" / "waypoints.csv")
+            except (PackageNotFoundError, Exception):
+                continue
 
+        candidates.append(Path(__file__).resolve().parent / ".." / "racingproject" / "data" / "waypoints.csv")
         candidates.append(Path(__file__).resolve().parent / "data" / "waypoints.csv")
 
         for candidate in candidates:
@@ -298,6 +300,32 @@ class RacingNode(Node):
         delta = self.path_xy - np.array([[x, y]])
         dists = np.einsum("ij,ij->i", delta, delta)
         return int(np.argmin(dists))
+
+    def _segment_by_distance(self, start_idx: int, lookahead_dist: float) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Collect path points forward from start_idx until lookahead_dist is reached.
+
+        Wraps around the path to maintain continuous control on closed loops.
+        """
+        if self.path_xy is None or len(self.path_xy) == 0:
+            return np.empty((0, 2)), np.empty((0,))
+        n = len(self.path_xy)
+        pts = [self.path_xy[start_idx]]
+        kappas = [self.path_kappa[start_idx]] if self.path_kappa is not None else []
+        total = 0.0
+        idx = start_idx
+        # Guard against infinite loops by limiting to n points.
+        for _ in range(n - 1):
+            next_idx = (idx + 1) % n
+            ds = float(np.hypot(*(self.path_xy[next_idx] - self.path_xy[idx])))
+            total += ds
+            pts.append(self.path_xy[next_idx])
+            if self.path_kappa is not None:
+                kappas.append(self.path_kappa[next_idx])
+            idx = next_idx
+            if total >= lookahead_dist or next_idx == start_idx:
+                break
+        return np.array(pts), np.array(kappas) if self.path_kappa is not None else np.array([])
 
     def _prepare_visualization_msgs(self) -> None:
         """Precompute static visualization messages for RViz."""
@@ -359,7 +387,7 @@ class RacingNode(Node):
 
 def main(args=None) -> None:
     rclpy.init(args=args)
-    node = RacingNode()
+    node = RacingNodeStanley()
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:

@@ -12,8 +12,8 @@ setup(
         ("share/ament_index/resource_index/packages", ["resource/" + package_name]),
         ("share/" + package_name, ["package.xml"]),
         ("share/" + package_name + "/data", ["src/racingproject/data/waypoints.csv"]),
-        ("share/" + package_name + "/launch", ["src/launch/racing_launch.py"]),
-        ("lib/" + package_name, ["scripts/racing_node"]),
+        ("share/" + package_name + "/launch", ["src/launch/racing_launch.py", "src/launch/racing_stanley_launch.py"]),
+        ("lib/" + package_name, ["scripts/racing_node", "scripts/racing_node_stanley"]),
     ],
     install_requires=["setuptools", "numpy", "scipy", "cvxpy", "rclpy", "ament_index_python"],
     zip_safe=True,
@@ -25,6 +25,7 @@ setup(
     entry_points={
         "console_scripts": [
             "racing_node = racingproject.racing_node:main",
+            "racing_node_stanley = racingproject_stanley.racing_node:main",
         ],
     },
 )

@@ -9,7 +9,7 @@ from launch_ros.actions import Node
 
 def generate_launch_description() -> LaunchDescription:
     pkg_share = Path(get_package_share_directory("racingproject"))
-    default_csv = pkg_share / "data" / "optimal_trajectory_xy.csv"
+    default_csv = pkg_share / "data" / "waypoints.csv"
 
     path_csv = LaunchConfiguration("path_csv")
 
@@ -21,29 +21,28 @@ def generate_launch_description() -> LaunchDescription:
 
     node_params = {
         "path_csv": path_csv,  # 기준 경로 CSV 파일 경로
-        "lookahead_points": 30,  # 제어 시 앞쪽으로 볼 포인트 개수
-        
+        "lookahead_distance": 15.0,  # 제어 시 앞쪽으로 볼 거리 [m]
         "speed_kp": 0.5,  # 속도 PID Kp
         "speed_ki": 0.1,  # 속도 PID Ki
         "speed_kd": 0.01,  # 속도 PID Kd
-        
         "v_high": 4.0,  # 직선 구간 목표 속도 [m/s] 최대속도 56km/h = 15.5m/s
         "v_low": 1.0,  # 코너 구간 목표 속도 [m/s]
         "kappa_th": 0.05,  # 코너 판단용 곡률 임계값, 이 곡률 넘어가면 감속
         
-        "mpc_Np": 10,  # MPC 예측 지평선 길이
-        "mpc_Nc": 5,  # MPC 제어 지평선 길이
         "control_dt": 0.05,  # 제어 주기/샘플 타임 [s]
-        
         "max_steer_deg": 20.0,  # 최대 조향각 [deg]
         "max_steer_rate_deg": 200.0,  # 최대 조향각 속도 [deg/s]
         "wheelbase": 1.023,  # 휠베이스 길이 [m]
+        
+        "stanley_k": 1.5,  # Stanley 횡방향 오차 게인
+        "stanley_softening": 0.1,  # 저속 안정화를 위한 소프트닝 항 [m/s]
+        "stanley_heading_gain": 1.0,  # 헤딩 오차 가중치
     }
 
     racing_node = Node(
         package="racingproject",
-        executable="racing_node",
-        name="racing_node",
+        executable="racing_node_stanley",
+        name="racing_node_stanley",
         output="screen",
         parameters=[node_params],
     )
