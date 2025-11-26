@@ -157,60 +157,73 @@ def generate_velocity_profile(path):
         
     return v_final, curvature
 
-def save_csv(path, velocity, curvature, filename="optimal_trajectory.csv"):
+def save_csv_versions(path, velocity, curvature):
+    """
+    최적 경로 데이터를 저장하며, 파일명에 물리 파라미터를 포함시킵니다.
+    형식: filename(MU, MAX_ACCEL, MAX_DECEL).csv
+    """
     # Heading 계산
     headings = np.zeros(len(path))
     diffs = np.diff(path, axis=0)
     headings[:-1] = np.arctan2(diffs[:, 1], diffs[:, 0])
-    headings[-1] = headings[-2] # 마지막 점 보정
+    headings[-1] = headings[-2] 
     
-    df = pd.DataFrame({
+    # 데이터프레임 생성
+    df_full = pd.DataFrame({
         'x': path[:, 0],
         'y': path[:, 1],
         'velocity': velocity,
         'heading': headings,
         'curvature': curvature
     })
-    df.to_csv(filename, index=False)
-    print(f"File saved to {filename}")
+    
+    # 파일명에 파라미터 추가 (문자열 포맷팅)
+    # 예: (1.2, 4.0, 8.0)
+    param_str = f"({MU}, {MAX_ACCEL}, {MAX_DECEL})"
+    
+    # 1. Full Version 저장
+    filename_full = f"optimal_trajectory_full{param_str}.csv"
+    df_full.to_csv(filename_full, index=False)
+    print(f"Full data saved to: {filename_full}")
+
+    # 2. XY Version 저장
+    filename_xy = f"optimal_trajectory_xy{param_str}.csv"
+    df_xy = df_full[['x', 'y']]
+    df_xy.to_csv(filename_xy, index=False)
+    print(f"XY coordinates saved to: {filename_xy}")
 
 def visualize_road(ref_path, opt_path, velocity):
     """
-    도로를 검정색 배경으로 그리고, 중앙선과 최적 경로를 시각화합니다.
+    도로와 최적 경로를 시각화하고, 파라미터가 포함된 파일명으로 이미지를 저장합니다.
     """
-    # 도로 경계 계산을 위한 법선 벡터
+    # (이전과 동일한 그리기 코드...)
     normals = calc_normal_vectors(ref_path)
-    
-    # 도로 폭의 절반
     half_width = TRACK_WIDTH / 2.0
-    
-    # 좌/우 경계선 계산
     left_bound = ref_path + normals * half_width
     right_bound = ref_path - normals * half_width
-    
-    # 도로 영역 폴리곤 생성 (좌측 경계 -> 우측 경계 역순)
     road_poly = np.vstack([left_bound, right_bound[::-1]])
     
     plt.figure(figsize=(12, 10))
-    
-    # 1. 도로 배경 그리기 (검정색)
     plt.fill(road_poly[:, 0], road_poly[:, 1], color='black', label='Road Surface')
-    
-    # 2. 중앙선 그리기 (흰색 점선)
     plt.plot(ref_path[:, 0], ref_path[:, 1], 'w--', label='Center Line', linewidth=1.5, alpha=0.8)
-    
-    # 3. 최적 경로 그리기
     sc = plt.scatter(opt_path[:, 0], opt_path[:, 1], c=velocity, 
                      cmap='plasma', s=5, label='Optimal Path', zorder=5)
     
     plt.colorbar(sc, label='Target Velocity [m/s]')
     plt.legend()
-    plt.title("Optimal Racing Line on Generated Road")
+    # 제목에도 파라미터 표시
+    plt.title(f"Optimal Racing Line (Mu={MU}, Acc={MAX_ACCEL}, Dec={MAX_DECEL})")
     plt.xlabel("X [m]")
     plt.ylabel("Y [m]")
     plt.axis('equal')
     plt.grid(True, linestyle=':', alpha=0.3)
-    plt.savefig("optimal_path.png", dpi=300, bbox_inches='tight')
+    
+    # [수정] 이미지 파일명에 파라미터 추가
+    param_str = f"({MU}, {MAX_ACCEL}, {MAX_DECEL})"
+    filename_png = f"optimal_path{param_str}.png"
+    
+    plt.savefig(filename_png, dpi=300, bbox_inches='tight')
+    print(f"Image saved to: {filename_png}")
     plt.show()
 
 # ==========================================
@@ -231,7 +244,7 @@ if __name__ == "__main__":
         velocity, curvature = generate_velocity_profile(opt_path)
         
         print("4. Saving Result...")
-        save_csv(opt_path, velocity, curvature)
+        save_csv_versions(opt_path, velocity, curvature)
     
         print("5. Visualizing result...")
         visualize_road(ref_path, opt_path, velocity)
