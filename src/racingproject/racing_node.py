@@ -12,10 +12,10 @@ from geometry_msgs.msg import Point, PoseStamped, Quaternion, Vector3Stamped
 from pathlib import Path
 from nav_msgs.msg import Path as PathMsg
 from rclpy.node import Node
+from rclpy.qos import QoSDurabilityPolicy, QoSProfile, QoSReliabilityPolicy
 from std_msgs.msg import Float32MultiArray
 from visualization_msgs.msg import Marker, MarkerArray
 
-from .path_manager import PathManager, PathParams
 from .speed_pid import SpeedPID
 from .steering_mpc import SteeringMPC
 
@@ -30,6 +30,7 @@ class RacingNode(Node):
 
     def __init__(self):
         super().__init__("racing_node")
+        self.path_manager = None
         self.declare_parameters(
             "",
             [
@@ -63,20 +64,20 @@ class RacingNode(Node):
         path_csv_param = self.get_parameter("path_csv").get_parameter_value().string_value
         path_csv = self._resolve_path_csv(path_csv_param)
 
-        path_params = PathParams(
-            sample_ds=float(self.get_parameter("sample_ds").value),
-            max_offset=float(self.get_parameter("max_offset").value),
-            offset_gain=float(self.get_parameter("offset_gain").value),
-            offset_power=float(self.get_parameter("offset_power").value),
-            curvature_smooth_window=int(self.get_parameter("curvature_smooth_window").value),
-            lookahead_points=int(self.get_parameter("lookahead_points").value),
-        )
+        # Speed/curvature thresholds are needed before visualization markers are prepared.
+        self.v_high = float(self.get_parameter("v_high").value)
+        self.v_low = float(self.get_parameter("v_low").value)
+        self.kappa_th = float(self.get_parameter("kappa_th").value)
+        self.control_dt = float(self.get_parameter("control_dt").value)
+        self.lookahead_points = int(self.get_parameter("lookahead_points").value)
 
-        self.path_manager: Optional[PathManager] = None
+        self.path_xy: Optional[np.ndarray] = None
+        self.path_kappa: Optional[np.ndarray] = None
+        self.viz_timer = None
         if path_csv:
             try:
-                self.path_manager = PathManager(path_csv, path_params)
-                self.get_logger().info(f"Loaded path from {path_csv} with {len(self.path_manager.racing_xy)} points.")
+                self.path_xy, self.path_kappa = self._load_path(path_csv)
+                self.get_logger().info(f"Loaded path from {path_csv} with {len(self.path_xy)} points.")
                 self._prepare_visualization_msgs()
             except Exception as exc:
                 self.get_logger().error(f"Failed to initialize PathManager: {exc}")
@@ -98,22 +99,29 @@ class RacingNode(Node):
             wheelbase=float(self.get_parameter("wheelbase").value),
         )
 
-        self.v_high = float(self.get_parameter("v_high").value)
-        self.v_low = float(self.get_parameter("v_low").value)
-        self.kappa_th = float(self.get_parameter("kappa_th").value)
-        self.control_dt = float(self.get_parameter("control_dt").value)
-
         self.state_sub = self.create_subscription(
             Float32MultiArray,
             "/mobile_system_control/ego_vehicle",
             self.state_callback,
             10,
         )
+
+        latched_qos = QoSProfile(
+            depth=1,
+            reliability=QoSReliabilityPolicy.RELIABLE,
+            durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+        )
+
         self.cmd_pub = self.create_publisher(Vector3Stamped, "/mobile_system_control/control_msg", 10)
-        self.path_pub = self.create_publisher(PathMsg, "/mobile_system_control/racing_path", 1)
+        self.path_pub = self.create_publisher(PathMsg, "/mobile_system_control/racing_path", latched_qos)
         self.pose_pub = self.create_publisher(PathMsg, "/mobile_system_control/ego_pose_path", 1)
-        self.decel_marker_pub = self.create_publisher(MarkerArray, "/mobile_system_control/decel_zones", 1)
+        self.decel_marker_pub = self.create_publisher(MarkerArray, "/mobile_system_control/decel_zones", latched_qos)
         self.timer = self.create_timer(self.control_dt, self.control_loop)
+
+        # Kick off visualization publication after publishers exist.
+        if self.path_xy is not None:
+            self._publish_visualization()
+            self.viz_timer = self.create_timer(0.5, self._publish_visualization)
 
         self.current_state: Optional[Tuple[float, float, float, float, float]] = None
         self.last_time = self.get_clock().now()
@@ -136,7 +144,7 @@ class RacingNode(Node):
 
     def control_loop(self) -> None:
         """Main control loop invoked by ROS timer."""
-        if self.current_state is None or self.path_manager is None:
+        if self.current_state is None or self.path_xy is None:
             return
 
         now = self.get_clock().now()
@@ -146,8 +154,13 @@ class RacingNode(Node):
         self.last_time = now
 
         x, y, theta, v_meas, delta_meas = self.current_state
-        idx = self.path_manager.find_closest_index(x, y)
-        path_segment, kappa_segment = self.path_manager.get_local_segment(idx)
+        if self.path_xy is None or len(self.path_xy) == 0:
+            return
+
+        idx = self._find_closest_index(x, y)
+        segment_indices = np.arange(idx, idx + self.lookahead_points) % len(self.path_xy)
+        path_segment = self.path_xy[segment_indices]
+        kappa_segment = self.path_kappa[segment_indices]
 
         if len(path_segment) < 2:
             self.get_logger().warn("Path segment too short for control.")
@@ -162,6 +175,9 @@ class RacingNode(Node):
         mpc_state = np.array([e_y, e_psi, delta_meas, v_meas], dtype=float)
         steer_cmd = self.mpc.solve(mpc_state, path_segment, v_ref)
 
+        # Log target speed and steering command for each control cycle.
+        print(f"[CONTROL] v_ref={v_ref:.2f} m/s, steer_cmd={steer_cmd:.3f} rad")
+
         msg = Vector3Stamped()
         msg.header.stamp = now.to_msg()
         msg.header.frame_id = "Team8"
@@ -169,6 +185,7 @@ class RacingNode(Node):
         msg.vector.y = steer_cmd
         msg.vector.z = brake
         self.cmd_pub.publish(msg)
+        print(msg)
 
         if self.racing_path_msg is not None:
             self.racing_path_msg.header.stamp = now.to_msg()
@@ -185,6 +202,20 @@ class RacingNode(Node):
         if len(self.pose_path_msg.poses) > 500:
             self.pose_path_msg.poses = self.pose_path_msg.poses[-500:]
         self.pose_pub.publish(self.pose_path_msg)
+
+    def _publish_visualization(self) -> None:
+        """Publish static path and decel markers for RViz visualization."""
+        if self.racing_path_msg is not None:
+            now = self.get_clock().now()
+            self.racing_path_msg.header.stamp = now.to_msg()
+            self.path_pub.publish(self.racing_path_msg)
+        if self.decel_markers is not None:
+            now = self.get_clock().now()
+            for marker in self.decel_markers.markers:
+                marker.header.stamp = now.to_msg()
+            self.decel_marker_pub.publish(self.decel_markers)
+        elif self.path_manager is None:
+            self.get_logger().warn_once("Visualization not published because path is unavailable. Check 'path_csv'.")
 
     def _compute_errors(self, path_segment: np.ndarray, x: float, y: float, theta: float) -> Tuple[float, float]:
         """
@@ -231,20 +262,64 @@ class RacingNode(Node):
         )
         return ""
 
+    def _load_path(self, csv_path: str) -> Tuple[np.ndarray, np.ndarray]:
+        """Load XY path directly from CSV and compute curvature."""
+        try:
+            data = np.loadtxt(csv_path, delimiter=",")
+        except ValueError:
+            data = np.loadtxt(csv_path, delimiter=",", skiprows=1)
+
+        data = np.atleast_2d(data)
+        if data.shape[1] < 2:
+            raise ValueError("CSV must contain at least two numeric columns for x and y.")
+        xy = data[:, :2]
+        s = self._compute_arclength(xy)
+        kappa = self._compute_curvature(xy, s)
+        return xy, kappa
+
+    @staticmethod
+    def _compute_arclength(xy: np.ndarray) -> np.ndarray:
+        dx = np.diff(xy[:, 0])
+        dy = np.diff(xy[:, 1])
+        ds = np.hypot(dx, dy)
+        return np.concatenate([[0.0], np.cumsum(ds)])
+
+    def _compute_curvature(self, xy: np.ndarray, s: np.ndarray) -> np.ndarray:
+        """Compute signed curvature along the path."""
+        if len(xy) < 3:
+            return np.zeros(len(xy))
+
+        dx_ds = np.gradient(xy[:, 0], s)
+        dy_ds = np.gradient(xy[:, 1], s)
+        ddx_ds = np.gradient(dx_ds, s)
+        ddy_ds = np.gradient(dy_ds, s)
+
+        cross = dx_ds * ddy_ds - dy_ds * ddx_ds
+        denom = (dx_ds**2 + dy_ds**2) ** 1.5 + 1e-6
+        return cross / denom
+
+    def _find_closest_index(self, x: float, y: float) -> int:
+        """Return index of the closest point on the loaded path."""
+        if self.path_xy is None or len(self.path_xy) == 0:
+            return 0
+        delta = self.path_xy - np.array([[x, y]])
+        dists = np.einsum("ij,ij->i", delta, delta)
+        return int(np.argmin(dists))
+
     def _prepare_visualization_msgs(self) -> None:
         """Precompute static visualization messages for RViz."""
-        if self.path_manager is None:
+        if self.path_xy is None or self.path_kappa is None:
             return
 
         self.racing_path_msg = PathMsg()
         self.racing_path_msg.header.frame_id = "map"
-        xy = self.path_manager.racing_xy
+        xy = self.path_xy
         headings = self._path_headings(xy)
         now = self.get_clock().now()
         for (px, py), yaw in zip(xy, headings):
             self.racing_path_msg.poses.append(self._pose_stamped(px, py, yaw, now))
 
-        kappa = np.abs(self.path_manager.kappa_racing)
+        kappa = np.abs(self.path_kappa)
         mask = kappa > self.kappa_th
         decel_points = xy[mask]
         marker = Marker()

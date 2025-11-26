@@ -13,6 +13,7 @@ setup(
         ("share/" + package_name, ["package.xml"]),
         ("share/" + package_name + "/data", ["src/racingproject/data/waypoints.csv"]),
         ("share/" + package_name + "/launch", ["src/launch/racing_launch.py"]),
+        ("lib/" + package_name, ["scripts/racing_node"]),
     ],
     install_requires=["setuptools", "numpy", "scipy", "cvxpy", "rclpy", "ament_index_python"],
     zip_safe=True,

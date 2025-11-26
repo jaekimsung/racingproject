@@ -27,28 +27,46 @@ class PathParams:
 
 
 class PathManager:
-    """Generate and serve a smoothed racing line derived from a reference centerline."""
+    """Generate and serve a racing line directly from a CSV centerline (no resampling)."""
 
     def __init__(self, csv_path: str, params: PathParams):
         self.params = params
+
+        # 1) Load centerline from CSV: expected shape (N, 2) = [x, y]
         centerline = self.load_centerline(csv_path)
 
-        s_center, xy_center = self.resample_by_arclength(centerline, params.sample_ds)
-        self.s_center = s_center
-        self.xy_center = xy_center
+        # 2) Compute cumulative arc length along the raw CSV points
+        s_center = self._compute_arclength(centerline)
 
-        kappa_center = self.compute_curvature(xy_center, s_center)
-        tangent, normal = self.compute_tangent_normal(xy_center, s_center)
+        # 3) Store as centerline
+        self.s_center = s_center           # arc length array
+        self.xy_center = centerline        # raw CSV coordinates
 
-        d_lat = self.compute_lateral_offset(kappa_center)
-        racing_xy_raw = xy_center + (d_lat[:, None] * normal)
+        # 4) For now, use the centerline directly as the racing line (no offset / optimization)
+        self.s_racing = self.s_center
+        self.racing_xy = self.xy_center
+        self.kappa_racing = self.compute_curvature(self.racing_xy, self.s_racing)
 
-        # Smooth the offset path for a continuous racing line.
-        s_racing, xy_racing = self.spline_smooth_and_resample(racing_xy_raw, params.sample_ds)
+    @staticmethod
+    def _compute_arclength(xy: np.ndarray) -> np.ndarray:
+        """
+        Compute cumulative arc length along a polyline defined by xy points.
 
-        self.s_racing = s_racing
-        self.racing_xy = xy_racing
-        self.kappa_racing = self.compute_curvature(xy_racing, s_racing)
+        Args:
+            xy: np.ndarray of shape (N, 2), columns are [x, y].
+
+        Returns:
+            s: np.ndarray of shape (N,), cumulative arc length with s[0] = 0.
+        """
+        if xy.shape[0] < 2:
+            # Degenerate path: just return zero-length
+            return np.zeros(xy.shape[0], dtype=float)
+
+        dx = np.diff(xy[:, 0])
+        dy = np.diff(xy[:, 1])
+        ds = np.hypot(dx, dy)
+        s = np.concatenate([[0.0], np.cumsum(ds)])
+        return s
 
     @staticmethod
     def load_centerline(csv_path: str) -> np.ndarray:
