@@ -34,17 +34,14 @@ class RacingNode(Node):
             "",
             [
                 ("path_csv", ""), # 기준 경로 CSV 파일 경로
-                ("lookahead_points", 30), # - lookahead_points: 제어 시 앞쪽으로 볼 포인트 개수
-                
+                ("lookahead_points", 30), # - lookahead_points: 제어 시 최소한 앞쪽으로 볼 포인트 개수
+                ("braking_distance", 20.0), # - braking_distance: 곡률 기반 감속을 위한 앞보기 거리 [m]
                 ("speed_kp", 0.5), # - speed_kp/ki/kd: 속도 PID 게인
                 ("speed_ki", 0.1),
                 ("speed_kd", 0.01),
-                
                 ("v_high", 15.0), # - v_high/v_low: 직선/코너에서 목표 속도 [m/s]
                 ("v_low", 8.0),
-                
                 ("kappa_th", 0.05), # - kappa_th: 코너 판단용 곡률 임계값
-                
                 ("mpc_Np", 10), # - mpc_Np: MPC 예측 지평선 길이
                 ("mpc_Nc", 5), # - mpc_Nc: MPC 제어 지평선 길이
                 ("control_dt", 0.05), # - control_dt: 제어 주기/샘플 타임 [s]
@@ -63,20 +60,23 @@ class RacingNode(Node):
         self.kappa_th = float(self.get_parameter("kappa_th").value)
         self.control_dt = float(self.get_parameter("control_dt").value)
         self.lookahead_points = int(self.get_parameter("lookahead_points").value)
+        self.braking_distance = float(self.get_parameter("braking_distance").value)
         self.max_steer = math.radians(float(self.get_parameter("max_steer_deg").value))
         self.max_steer_rate = math.radians(float(self.get_parameter("max_steer_rate_deg").value))
         self.wheelbase = float(self.get_parameter("wheelbase").value)
 
         self.path_xy: Optional[np.ndarray] = None
         self.path_kappa: Optional[np.ndarray] = None
+        self.path_step: float = 1.0
         self.viz_timer = None
         if path_csv:
             try:
                 self.path_xy, self.path_kappa = self._load_path(path_csv)
+                self.path_step = self._compute_path_step(self.path_xy)
                 self.get_logger().info(f"Loaded path from {path_csv} with {len(self.path_xy)} points.")
                 self._prepare_visualization_msgs()
             except Exception as exc:
-                self.get_logger().error(f"Failed to initialize PathManager: {exc}")
+                self.get_logger().error(f"Failed to load path: {exc}")
         else:
             self.get_logger().warn("No path CSV could be resolved. Set parameter 'path_csv' to begin.")
 
@@ -154,18 +154,29 @@ class RacingNode(Node):
             return
 
         idx = self._find_closest_index(x, y)
-        segment_indices = np.arange(idx, idx + self.lookahead_points) % len(self.path_xy)
-        path_segment = self.path_xy[segment_indices]
-        kappa_segment = self.path_kappa[segment_indices]
-
-        if len(path_segment) < 2:
-            self.get_logger().warn("Path segment too short for control.")
-            return
-
+        # --- Speed control lookahead based on braking distance ---
+        step = max(self.path_step, 1e-6)
+        num_speed_points = max(self.lookahead_points, int(self.braking_distance / step))
+        num_speed_points = max(2, num_speed_points)
+        kappa_indices = (np.arange(num_speed_points) + idx) % len(self.path_kappa)
+        kappa_segment = self.path_kappa[kappa_indices]
         k_local = float(np.max(np.abs(kappa_segment))) if len(kappa_segment) > 0 else 0.0
         v_ref = self.v_low if k_local > self.kappa_th else self.v_high
 
         throttle, brake = self.speed_pid.step(v_ref, v_meas, dt)
+
+        # --- MPC steering lookahead based on predicted travel distance ---
+        T_horizon = self.mpc.Np * self.mpc.dt
+        mpc_dist = max(v_meas, 2.0) * T_horizon
+        num_mpc_points = int(mpc_dist / step)
+        num_mpc_points = max(5, num_mpc_points)
+        num_mpc_points = min(len(self.path_xy), num_mpc_points)
+
+        mpc_indices = (np.arange(num_mpc_points) + idx) % len(self.path_xy)
+        path_segment = self.path_xy[mpc_indices]
+        if len(path_segment) < 2:
+            self.get_logger().warn("Path segment too short for control.")
+            return
 
         e_y, e_psi = self._compute_errors(path_segment, x, y, theta)
         mpc_state = np.array([e_y, e_psi, delta_meas, v_meas], dtype=float)
@@ -248,11 +259,14 @@ class RacingNode(Node):
         candidates = []
         try:
             share_dir = get_package_share_directory("racingproject")
+            candidates.append(Path(share_dir) / "data" / "optimal.csv")
             candidates.append(Path(share_dir) / "data" / "waypoints.csv")
         except (PackageNotFoundError, Exception):
             pass
 
-        candidates.append(Path(__file__).resolve().parent / "data" / "waypoints.csv")
+        base = Path(__file__).resolve().parent / "data"
+        candidates.append(base / "optimal.csv")
+        candidates.append(base / "waypoints.csv")
 
         for candidate in candidates:
             if candidate.exists():
@@ -299,6 +313,16 @@ class RacingNode(Node):
         cross = dx_ds * ddy_ds - dy_ds * ddx_ds
         denom = (dx_ds**2 + dy_ds**2) ** 1.5 + 1e-6
         return cross / denom
+
+    @staticmethod
+    def _compute_path_step(xy: np.ndarray) -> float:
+        """Average Euclidean spacing between consecutive path points."""
+        if len(xy) < 2:
+            return 1.0
+        diffs = np.diff(xy, axis=0)
+        spacing = np.hypot(diffs[:, 0], diffs[:, 1])
+        mean_step = float(np.mean(spacing))
+        return mean_step if mean_step > 1e-6 else 1.0
 
     def _find_closest_index(self, x: float, y: float) -> int:
         """Return index of the closest point on the loaded path."""

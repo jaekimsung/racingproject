@@ -1,6 +1,4 @@
 from pathlib import Path
-
-from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration
@@ -8,8 +6,7 @@ from launch_ros.actions import Node
 
 
 def generate_launch_description() -> LaunchDescription:
-    pkg_share = Path(get_package_share_directory("racingproject"))
-    default_csv = pkg_share / "data" / "optimal_trajectory_xy.csv"
+    default_csv = Path(__file__).resolve().parent.parent / "racingproject" / "data" / "optimal.csv"
 
     path_csv = LaunchConfiguration("path_csv")
 
@@ -21,7 +18,8 @@ def generate_launch_description() -> LaunchDescription:
 
     node_params = {
         "path_csv": path_csv,  # 기준 경로 CSV 파일 경로
-        "lookahead_points": 30,  # 제어 시 앞쪽으로 볼 포인트 개수
+        "lookahead_points": 10,  # 제어 시 앞쪽으로 최소한 볼 포인트 개수
+        "braking_distance": 10.0,  # 감속 판단용 앞보기 거리 [m]
         
         "speed_kp": 0.5,  # 속도 PID Kp
         "speed_ki": 0.1,  # 속도 PID Ki
@@ -29,14 +27,14 @@ def generate_launch_description() -> LaunchDescription:
         
         "v_high": 4.0,  # 직선 구간 목표 속도 [m/s] 최대속도 56km/h = 15.5m/s
         "v_low": 1.0,  # 코너 구간 목표 속도 [m/s]
-        "kappa_th": 0.05,  # 코너 판단용 곡률 임계값, 이 곡률 넘어가면 감속
+        "kappa_th": 0.1,  # 코너 판단용 곡률 임계값, 이 곡률 넘어가면 감속 (높이면 감속 구간 줄어듦)
         
         "mpc_Np": 10,  # MPC 예측 지평선 길이
         "mpc_Nc": 5,  # MPC 제어 지평선 길이
         "control_dt": 0.05,  # 제어 주기/샘플 타임 [s]
         
         "max_steer_deg": 20.0,  # 최대 조향각 [deg]
-        "max_steer_rate_deg": 200.0,  # 최대 조향각 속도 [deg/s]
+        "max_steer_rate_deg": 60.0,  # 최대 조향각 속도 [deg/s]
         "wheelbase": 1.023,  # 휠베이스 길이 [m]
     }
 

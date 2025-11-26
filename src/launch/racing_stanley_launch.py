@@ -1,6 +1,4 @@
 from pathlib import Path
-
-from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration
@@ -8,8 +6,7 @@ from launch_ros.actions import Node
 
 
 def generate_launch_description() -> LaunchDescription:
-    pkg_share = Path(get_package_share_directory("racingproject"))
-    default_csv = pkg_share / "data" / "optimal_trajectory_xy.csv"
+    default_csv = Path(__file__).resolve().parent.parent / "racingproject" / "data" / "optimal.csv"
 
     path_csv = LaunchConfiguration("path_csv")
 
@@ -22,6 +19,7 @@ def generate_launch_description() -> LaunchDescription:
     node_params = {
         "path_csv": path_csv,  # 기준 경로 CSV 파일 경로
         "lookahead_distance": 15.0,  # 제어 시 앞쪽으로 볼 거리 [m]
+        
         "speed_kp": 0.5,  # 속도 PID Kp
         "speed_ki": 0.1,  # 속도 PID Ki
         "speed_kd": 0.01,  # 속도 PID Kd
@@ -31,7 +29,7 @@ def generate_launch_description() -> LaunchDescription:
         
         "control_dt": 0.05,  # 제어 주기/샘플 타임 [s]
         "max_steer_deg": 20.0,  # 최대 조향각 [deg]
-        "max_steer_rate_deg": 200.0,  # 최대 조향각 속도 [deg/s]
+        "max_steer_rate_deg": 60.0,  # 최대 조향각 속도 [deg/s]
         "wheelbase": 1.023,  # 휠베이스 길이 [m]
         
         "stanley_k": 1.5,  # Stanley 횡방향 오차 게인

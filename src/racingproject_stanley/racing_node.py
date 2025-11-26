@@ -75,7 +75,7 @@ class RacingNodeStanley(Node):
                 self.get_logger().info(f"Loaded path from {path_csv} with {len(self.path_xy)} points.")
                 self._prepare_visualization_msgs()
             except Exception as exc:
-                self.get_logger().error(f"Failed to initialize path: {exc}")
+                self.get_logger().error(f"Failed to load path: {exc}")
         else:
             self.get_logger().warn("No path CSV could be resolved. Set parameter 'path_csv' to begin.")
 
@@ -246,12 +246,16 @@ class RacingNodeStanley(Node):
         for pkg in ("racingproject_stanley", "racingproject"):
             try:
                 share_dir = get_package_share_directory(pkg)
+                candidates.append(Path(share_dir) / "data" / "optimal.csv")
                 candidates.append(Path(share_dir) / "data" / "waypoints.csv")
             except (PackageNotFoundError, Exception):
                 continue
 
-        candidates.append(Path(__file__).resolve().parent / ".." / "racingproject" / "data" / "waypoints.csv")
-        candidates.append(Path(__file__).resolve().parent / "data" / "waypoints.csv")
+        base = Path(__file__).resolve().parent
+        candidates.append(base / ".." / "racingproject" / "data" / "optimal.csv")
+        candidates.append(base / ".." / "racingproject" / "data" / "waypoints.csv")
+        candidates.append(base / "data" / "optimal.csv")
+        candidates.append(base / "data" / "waypoints.csv")
 
         for candidate in candidates:
             if candidate.exists():
