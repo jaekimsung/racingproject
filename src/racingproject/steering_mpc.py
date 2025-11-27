@@ -22,7 +22,6 @@ class SteeringMPC:
         R: np.ndarray | None = None,
         max_steer: float = np.deg2rad(20.0),
         wheelbase: float = 2.7,
-        max_steer_rate: float = np.deg2rad(45.0),
     ):
         if cp is None:
             raise ImportError("cvxpy is required for SteeringMPC.")
@@ -31,7 +30,6 @@ class SteeringMPC:
         self.Nc = Nc
         self.dt = dt
         self.max_steer = max_steer
-        self.max_steer_rate = max_steer_rate
         self.wheelbase = wheelbase
 
         self.Q = Q if Q is not None else np.diag([5.0, 2.0, 0.5])
@@ -41,7 +39,7 @@ class SteeringMPC:
         """Build discrete-time linearized lateral dynamics matrices."""
         A = np.eye(3)
         A[0, 1] = self.dt * v
-        A[1, 2] = self.dt * v / max(self.wheelbase, 1e-3)
+        A[1, 2] = -self.dt * v / max(self.wheelbase, 1e-3)
 
         B = np.zeros((3, 1))
         B[2, 0] = self.dt  # steering rate affects delta
@@ -142,8 +140,7 @@ class SteeringMPC:
                 # Stage cost with input penalty
                 cost += cp.quad_form(x[:, k] - x_ref_k, self.Q) + cp.quad_form(u[:, k], self.R)
 
-                # Input rate and magnitude constraints
-                constraints.append(cp.abs(u[:, k]) <= self.max_steer_rate)
+                # Input magnitude constraint
                 constraints.append(cp.abs(x[2, k] + self.dt * u[:, k]) <= self.max_steer)
 
                 # Dynamics

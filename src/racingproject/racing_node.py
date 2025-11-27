@@ -46,7 +46,6 @@ class RacingNode(Node):
                 ("mpc_Nc", 5), # - mpc_Nc: MPC 제어 지평선 길이
                 ("control_dt", 0.05), # - control_dt: 제어 주기/샘플 타임 [s]
                 ("max_steer_deg", 20.0), # - max_steer_deg: 최대 조향각 [deg]
-                ("max_steer_rate_deg", 45.0), # - max_steer_rate_deg: 최대 조향각 속도 [deg/s]
                 ("wheelbase", 1.023), # - wheelbase: 휠베이스 길이 [m]
             ],
         )
@@ -62,7 +61,6 @@ class RacingNode(Node):
         self.lookahead_points = int(self.get_parameter("lookahead_points").value)
         self.braking_distance = float(self.get_parameter("braking_distance").value)
         self.max_steer = math.radians(float(self.get_parameter("max_steer_deg").value))
-        self.max_steer_rate = math.radians(float(self.get_parameter("max_steer_rate_deg").value))
         self.wheelbase = float(self.get_parameter("wheelbase").value)
 
         self.path_xy: Optional[np.ndarray] = None
@@ -91,7 +89,6 @@ class RacingNode(Node):
             Nc=int(self.get_parameter("mpc_Nc").value),
             dt=float(self.get_parameter("control_dt").value),
             max_steer=self.max_steer,
-            max_steer_rate=self.max_steer_rate,
             wheelbase=self.wheelbase,
         )
 
@@ -180,15 +177,16 @@ class RacingNode(Node):
 
         e_y, e_psi = self._compute_errors(path_segment, x, y, theta)
         mpc_state = np.array([e_y, e_psi, delta_meas, v_meas], dtype=float)
-        steer_cmd = self.mpc.solve(mpc_state, path_segment, v_ref)
+        steer_cmd = - self.mpc.solve(mpc_state, path_segment, v_ref)
         steer_norm = float(np.clip(steer_cmd / max(self.max_steer, 1e-6), -1.0, 1.0))
 
         # Log target speed and steering command for each control cycle.
         steer_deg = math.degrees(steer_cmd)
+        e_psi_deg = math.degrees(e_psi)
         print(
             f"[CONTROL] v_ref={v_ref:.2f} m/s, v={v_meas:.2f} m/s, "
             f"steer_cmd={steer_cmd:.3f} rad ({steer_deg:.2f} deg) "
-            f"(norm={steer_norm:.3f})"
+            f"(norm={steer_norm:.3f}), e_y={e_y:.3f} m, e_psi={e_psi:.3f} rad ({e_psi_deg:.2f} deg)"
         )
 
         msg = Vector3Stamped()
@@ -198,7 +196,6 @@ class RacingNode(Node):
         msg.vector.y = steer_norm
         msg.vector.z = brake
         self.cmd_pub.publish(msg)
-        print(msg)
 
         if self.racing_path_msg is not None:
             self.racing_path_msg.header.stamp = now.to_msg()

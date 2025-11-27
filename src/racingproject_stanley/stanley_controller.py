@@ -61,10 +61,11 @@ class StanleyController:
         if dt <= 0.0 or self.max_steer_rate <= 0.0:
             return desired_delta
 
-        max_delta_change = self.max_steer_rate * dt
-        limited_delta = max(
-            delta_meas - max_delta_change,
-            min(delta_meas + max_delta_change, desired_delta),
-        )
-        return max(-self.max_steer, min(self.max_steer, limited_delta))
+        # max_delta_change = self.max_steer_rate * dt
+        # limited_delta = max(
+        #     delta_meas - max_delta_change,
+        #     min(delta_meas + max_delta_change, desired_delta),
+        # )
+        # return max(-self.max_steer, min(self.max_steer, limited_delta))
+        return desired_delta
 

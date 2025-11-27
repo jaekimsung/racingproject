@@ -18,13 +18,12 @@ def generate_launch_description() -> LaunchDescription:
 
     node_params = {
         "path_csv": path_csv,  # 기준 경로 CSV 파일 경로
-        "lookahead_distance": 15.0,  # 제어 시 앞쪽으로 볼 거리 [m]
-        
-        "speed_kp": 0.5,  # 속도 PID Kp
-        "speed_ki": 0.1,  # 속도 PID Ki
+        "lookahead_distance": 5.0,
+        "speed_kp": 1.0,  # 속도 PID Kp
+        "speed_ki": 0.0,  # 속도 PID Ki
         "speed_kd": 0.01,  # 속도 PID Kd
-        "v_high": 4.0,  # 직선 구간 목표 속도 [m/s] 최대속도 56km/h = 15.5m/s
-        "v_low": 1.0,  # 코너 구간 목표 속도 [m/s]
+        "v_high": 15.5,  # 직선 구간 목표 속도 [m/s] 최대속도 56km/h = 15.5m/s
+        "v_low": 15.5,  # 코너 구간 목표 속도 [m/s]
         "kappa_th": 0.05,  # 코너 판단용 곡률 임계값, 이 곡률 넘어가면 감속
         
         "control_dt": 0.05,  # 제어 주기/샘플 타임 [s]
