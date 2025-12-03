@@ -29,7 +29,7 @@ def generate_launch_description() -> LaunchDescription:
         "v_low": 4.0,  # 코너 구간 목표 속도 [m/s]
         "kappa_th": 0.07,  # 코너 판단용 곡률 임계값, 이 곡률 넘어가면 감속 (높이면 감속 구간 줄어듦)
         
-        "mpc_Np": 10,  # MPC 예측 지평선 길이
+        "mpc_Np": 25,  # MPC 예측 지평선 길이
         "mpc_Nc": 5,  # MPC 제어 지평선 길이
         "control_dt": 0.05,  # 제어 주기/샘플 타임 [s]
         

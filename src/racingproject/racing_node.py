@@ -229,21 +229,26 @@ class RacingNode(Node):
 
     def _compute_errors(self, path_segment: np.ndarray, x: float, y: float, theta: float) -> Tuple[float, float]:
         """
-        Compute lateral and heading error to the first segment of the lookahead path.
+        Compute lateral and heading error to the CLOSEST point on the path.
+        Modified for MPC to strictly use current cross-track error.
         """
-        target = path_segment[min(1, len(path_segment) - 1)]
+        target = path_segment[0] 
+        
         dx = target[0] - x
         dy = target[1] - y
 
         # Transform into vehicle frame: forward = x-axis, left = y-axis.
         e_y = -math.sin(theta) * dx + math.cos(theta) * dy
 
+        # [수정] 헤딩 에러도 0번 점과 1번 점 사이의 벡터(접선)를 기준으로 계산
         if len(path_segment) >= 2:
-            next_pt = path_segment[min(2, len(path_segment) - 1)]
+            next_pt = path_segment[1]
             path_yaw = math.atan2(next_pt[1] - target[1], next_pt[0] - target[0])
         else:
             path_yaw = math.atan2(dy, dx)
+            
         e_psi = wrap_angle(path_yaw - theta)
+        
         return e_y, e_psi
 
     def _resolve_path_csv(self, param_value: str) -> str:
