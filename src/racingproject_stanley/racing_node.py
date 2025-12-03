@@ -49,6 +49,11 @@ class RacingNodeStanley(Node):
                 ("stanley_k", 1.5),  # - stanley_k: 횡방향 오차 게인
                 ("stanley_softening", 0.1),  # - stanley_softening: 저속에서의 소프트닝 항 [m/s]
                 ("stanley_heading_gain", 1.0),  # - stanley_heading_gain: 헤딩 오차 가중치
+                # 강제로 감속시킬 구간
+                ("slow_x_min", 0.0),
+                ("slow_x_max", 0.0),
+                ("slow_y_min", 0.0),
+                ("slow_y_max", 0.0),
             ],
         )
 
@@ -65,6 +70,11 @@ class RacingNodeStanley(Node):
         self.max_steer = math.radians(float(self.get_parameter("max_steer_deg").value))
         self.max_steer_rate = math.radians(float(self.get_parameter("max_steer_rate_deg").value))
         self.wheelbase = float(self.get_parameter("wheelbase").value)
+
+        self.slow_x_min = float(self.get_parameter("slow_x_min").value)
+        self.slow_x_max = float(self.get_parameter("slow_x_max").value)
+        self.slow_y_min = float(self.get_parameter("slow_y_min").value)
+        self.slow_y_max = float(self.get_parameter("slow_y_max").value)
 
         self.path_xy: Optional[np.ndarray] = None
         self.path_kappa: Optional[np.ndarray] = None
@@ -160,7 +170,19 @@ class RacingNodeStanley(Node):
             return
 
         k_local = float(np.max(np.abs(kappa_segment))) if len(kappa_segment) > 0 else 0.0
-        v_ref = self.v_low if k_local > self.kappa_th else self.v_high
+        # 1. 곡률 기반 감속 판단
+        is_curved = k_local > self.kappa_th
+        
+        # 2. 특정 좌표 구역(Box) 내 감속 판단
+        # x, y가 지정된 min/max 박스 안에 있는지 확인
+        in_slow_zone = (self.slow_x_min <= x <= self.slow_x_max) and \
+                       (self.slow_y_min <= y <= self.slow_y_max)
+        
+        # 둘 중 하나라도 해당되면 저속 주행
+        if is_curved or in_slow_zone:
+            v_ref = self.v_low
+        else:
+            v_ref = self.v_high
 
         throttle, brake = self.speed_pid.step(v_ref, v_meas, dt)
 

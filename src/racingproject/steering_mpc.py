@@ -41,7 +41,7 @@ class SteeringMPC:
         # State cost: [e_y, e_psi]
         self.Q = Q if Q is not None else np.diag([0.15, 0.1])
         # Input cost: penalize deviation from curvature (steering effort)
-        # R 값이 작을수록 핸들을 더 과격하게 꺾을 수 있습니다.
+        # R 값이 작을수록 핸들을 더 크게 꺾음
         self.R = R if R is not None else np.diag([6.0]) 
 
     def _linear_dynamics(self, v: float) -> tuple[np.ndarray, np.ndarray]:

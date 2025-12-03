@@ -25,6 +25,12 @@ def generate_launch_description() -> LaunchDescription:
         "v_high": 15.5,  # 직선 구간 목표 속도 [m/s] 최대속도 56km/h = 15.5m/s
         "v_low": 14.5,  # 코너 구간 목표 속도 [m/s]
         "kappa_th": 0.05,  # 코너 판단용 곡률 임계값, 이 곡률 넘어가면 감속
+
+        # 이 구간 안에 차가 있으면 무조건 v_low
+        "slow_x_min": 75.0,
+        "slow_x_max": 90.0,
+        "slow_y_min": 12.0,
+        "slow_y_max": 45.0,
         
         "control_dt": 0.05,  # 제어 주기/샘플 타임 [s]
         "max_steer_deg": 20.0,  # 최대 조향각 [deg]
