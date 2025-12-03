@@ -6,7 +6,7 @@ from launch_ros.actions import Node
 
 
 def generate_launch_description() -> LaunchDescription:
-    default_csv = Path(__file__).resolve().parent.parent / "racingproject" / "data" / "waypoints.csv"
+    default_csv = Path(__file__).resolve().parent.parent / "racingproject" / "data" / "optimal.csv"
 
     path_csv = LaunchConfiguration("path_csv")
 
@@ -27,7 +27,7 @@ def generate_launch_description() -> LaunchDescription:
         
         "v_high": 6.0,  # 직선 구간 목표 속도 [m/s] 최대속도 56km/h = 15.5m/s
         "v_low": 4.0,  # 코너 구간 목표 속도 [m/s]
-        "kappa_th": 0.07,  # 코너 판단용 곡률 임계값, 이 곡률 넘어가면 감속 (높이면 감속 구간 줄어듦)
+        "kappa_th": 0.08,  # 코너 판단용 곡률 임계값, 이 곡률 넘어가면 감속 (높이면 감속 구간 줄어듦)
 
         # 이 구간 안에 차가 있으면 무조건 v_low
         "slow_x_min": 75.0,
@@ -35,7 +35,7 @@ def generate_launch_description() -> LaunchDescription:
         "slow_y_min": 12.0,
         "slow_y_max": 45.0,
         
-        "mpc_Np": 40,  # MPC 예측 지평선 길이
+        "mpc_Np": 30,  # MPC 예측 지평선 길이
         "mpc_Nc": 5,  # MPC 제어 지평선 길이
         "control_dt": 0.05,  # 제어 주기/샘플 타임 [s]
         

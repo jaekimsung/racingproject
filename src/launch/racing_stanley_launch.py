@@ -18,13 +18,13 @@ def generate_launch_description() -> LaunchDescription:
 
     node_params = {
         "path_csv": path_csv,  # 기준 경로 CSV 파일 경로
-        "lookahead_distance": 5.0,
+        "lookahead_distance": 7.0,
         "speed_kp": 1.0,  # 속도 PID Kp
         "speed_ki": 0.0,  # 속도 PID Ki
         "speed_kd": 0.01,  # 속도 PID Kd
         "v_high": 15.5,  # 직선 구간 목표 속도 [m/s] 최대속도 56km/h = 15.5m/s
-        "v_low": 10,  # 코너 구간 목표 속도 [m/s]
-        "kappa_th": 0.05,  # 코너 판단용 곡률 임계값, 이 곡률 넘어가면 감속
+        "v_low": 10.0,  # 코너 구간 목표 속도 [m/s]
+        "kappa_th": 0.06,  # 코너 판단용 곡률 임계값, 이 곡률 넘어가면 감속
 
         # 이 구간 안에 차가 있으면 무조건 v_low
         "slow_x_min": 75.0,
@@ -37,7 +37,7 @@ def generate_launch_description() -> LaunchDescription:
         "max_steer_rate_deg": 60.0,  # 최대 조향각 속도 [deg/s]
         "wheelbase": 1.023,  # 휠베이스 길이 [m]
         
-        "stanley_k": 1.5,  # Stanley 횡방향 오차 게인
+        "stanley_k": 1.65,  # Stanley 횡방향 오차 게인
         "stanley_softening": 0.1,  # 저속 안정화를 위한 소프트닝 항 [m/s]
         "stanley_heading_gain": 1.0,  # 헤딩 오차 가중치
     }

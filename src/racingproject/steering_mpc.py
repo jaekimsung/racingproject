@@ -135,7 +135,9 @@ class SteeringMPC:
 
         for k in range(self.Np):
             idx = min(k, len(delta_ff) - 1)
-            
+            k_curr = kappa_ref[idx]
+            disturbance_heading = v_nom * k_curr * self.dt
+            D_k = np.array([[0.0], [disturbance_heading]])
             # Reference State (Always 0 error)
             x_ref = np.zeros((2, 1))
 
@@ -151,11 +153,11 @@ class SteeringMPC:
                 constraints.append(cp.abs(u[:, k]) <= self.max_steer)
 
                 # Dynamics update
-                constraints.append(x[:, [k + 1]] == A @ x[:, [k]] + B @ u[:, [k]])
+                constraints.append(x[:, [k + 1]] == A @ x[:, [k]] + B @ u[:, [k]] + D_k)
             else:
                 # Prediction beyond control horizon
                 cost += cp.quad_form(x[:, k] - x_ref[:, 0], self.Q)
-                constraints.append(x[:, [k + 1]] == A @ x[:, [k]]) # Zero order hold assumption or just coast
+                constraints.append(x[:, [k + 1]] == A @ x[:, [k]] + D_k)
 
         problem = cp.Problem(cp.Minimize(cost), constraints)
         try:
