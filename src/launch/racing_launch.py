@@ -6,7 +6,7 @@ from launch_ros.actions import Node
 
 
 def generate_launch_description() -> LaunchDescription:
-    default_csv = Path(__file__).resolve().parent.parent / "racingproject" / "data" / "waypoints.csv"
+    default_csv = Path(__file__).resolve().parent.parent / "racingproject" / "data" / "optimal.csv"
 
     path_csv = LaunchConfiguration("path_csv")
 
@@ -21,7 +21,7 @@ def generate_launch_description() -> LaunchDescription:
         "lookahead_points": 10,  # 제어 시 앞쪽으로 최소한 볼 포인트 개수 (포인트 간 간격 0.5m)
         "braking_distance": 10.0,  # 감속 판단용 앞보기 거리 [m]
         
-        "speed_kp": 0.3,  # 속도 PID Kp
+        "speed_kp": 0.5,  # 속도 PID Kp
         "speed_ki": 0.1,  # 속도 PID Ki
         "speed_kd": 0.01,  # 속도 PID Kd
         
@@ -35,8 +35,8 @@ def generate_launch_description() -> LaunchDescription:
         "slow_y_min": 12.0,
         "slow_y_max": 45.0,
         
-        "mpc_Np": 30,  # MPC 예측 지평선 길이
-        "mpc_Nc": 10,  # MPC 제어 지평선 길이
+        "mpc_Np": 25,  # MPC 예측 지평선 길이
+        "mpc_Nc": 5,  # MPC 제어 지평선 길이
         "control_dt": 0.05,  # 제어 주기/샘플 타임 [s]
         
         "max_steer_deg": 20.0,  # 최대 조향각 [deg]
