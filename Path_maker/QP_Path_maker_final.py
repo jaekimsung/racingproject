@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import cvxpy as cp
 import matplotlib.pyplot as plt
+import os
 # import matplotlib.image as mpimg # Removed as requested
 from scipy.interpolate import CubicSpline
 
@@ -10,15 +11,15 @@ from scipy.interpolate import CubicSpline
 # ==========================================
 TRACK_WIDTH = 8.0           # 도로 전폭 [m]
 VEHICLE_WIDTH = 1.2         # 차량 전폭 [m] (약 1.2m 가정)
-SAFETY_MARGIN = 0.8         # 도로 끝에서 띄울 여유 거리 [m]
+SAFETY_MARGIN = 1         # 도로 끝에서 띄울 여유 거리 [m]
 # 실제 사용 가능한 횡방향 오프셋 한계 (+/-)
 MAX_OFFSET = (TRACK_WIDTH / 2.0) - (VEHICLE_WIDTH / 2.0) - SAFETY_MARGIN
 
 # 속도 프로파일 생성용 물리 파라미터
-MU = 1.0                   # 타이어 마찰 계수 (튜닝 필요, 1.0 ~ 1.5)
+MU = 1.4                  # 타이어 마찰 계수 (튜닝 필요, 1.0 ~ 1.5)
 G = 9.81                    # 중력 가속도
-MAX_ACCEL = 2.0             # 최대 가속도 [m/s^2] (후륜 구동 고려)
-MAX_DECEL = 1.0             # 최대 감속도 [m/s^2] (브레이크 성능)
+MAX_ACCEL = 3.5             # 최대 가속도 [m/s^2] (후륜 구동 고려)
+MAX_DECEL = 8.0             # 최대 감속도 [m/s^2] (브레이크 성능)
 MAX_VELOCITY = 15.5         # 차량의 절대 최대 속도 [m/s] (최대 56 km/h)
 
 def load_and_resample(waypoints, step_size=0.5):
@@ -230,21 +231,32 @@ def visualize_road(ref_path, opt_path, velocity):
 # Main Execution
 # ==========================================
 if __name__ == "__main__":
-    input_csv = "waypoints.csv" # 입력 파일명
+    # [수정] 현재 파이썬 파일(QP_Path_maker_final.py)이 있는 폴더 경로를 구함
+    current_dir = os.path.dirname(os.path.abspath(__file__))
     
-    print("1. Loading Map...")
-    # 경로를 로드하고 0.5m 간격으로 촘촘하게 만듭니다.
-    ref_path, is_loop = load_and_resample(input_csv, step_size=0.5)
+    # [수정] 그 폴더 안에 있는 waypoints.csv를 가리키도록 절대 경로 생성
+    input_csv = os.path.join(current_dir, "waypoints.csv")
     
-    print("2. Optimizing Geometry (Min Curvature)...")
-    opt_path = optimize_trajectory(ref_path, is_loop)
-    
-    if opt_path is not None:
-        print("3. Generating Velocity Profile...")
-        velocity, curvature = generate_velocity_profile(opt_path)
+    print(f"Reading file from: {input_csv}") # 경로 확인용 출력
+
+    if not os.path.exists(input_csv):
+        print(f"Error: '{input_csv}' 파일이 존재하지 않습니다.")
+        print("csv 파일을 파이썬 스크립트와 같은 폴더에 넣어주세요.")
+    else:
+        print("1. Loading Map...")
+        # 경로를 로드하고 0.5m 간격으로 촘촘하게 만듭니다.
+        ref_path, is_loop = load_and_resample(input_csv, step_size=0.5)
         
-        print("4. Saving Result...")
-        save_csv_versions(opt_path, velocity, curvature)
-    
-        print("5. Visualizing result...")
-        visualize_road(ref_path, opt_path, velocity)
+        print("2. Optimizing Geometry (Min Curvature)...")
+        opt_path = optimize_trajectory(ref_path, is_loop)
+        
+        if opt_path is not None:
+            print("3. Generating Velocity Profile...")
+            velocity, curvature = generate_velocity_profile(opt_path)
+            
+            print("4. Saving Result...")
+            # 저장할 때도 같은 폴더에 저장되도록 설정
+            save_csv_versions(opt_path, velocity, curvature)
+        
+            print("5. Visualizing result...")
+            visualize_road(ref_path, opt_path, velocity)
