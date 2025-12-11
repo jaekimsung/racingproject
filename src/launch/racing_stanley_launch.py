@@ -22,8 +22,8 @@ def generate_launch_description() -> LaunchDescription:
         "speed_kp": 0.8,  # 속도 PID Kp
         "speed_ki": 0.0,  # 속도 PID Ki
         "speed_kd": 0.01,  # 속도 PID Kd
-        "v_high": 18.0,  # 직선 구간 목표 속도 [m/s] 최대속도 56km/h = 15.5m/s
-        "v_low": 15.0,  # 코너 구간 목표 속도 [m/s]
+        "v_high": 17.0,  # 직선 구간 목표 속도 [m/s] 최대속도 56km/h = 15.5m/s
+        "v_low": 13.0,  # 코너 구간 목표 속도 [m/s]
         "kappa_th": 0.08,  # 코너 판단용 곡률 임계값, 이 곡률 넘어가면 감속
 
         # 이 구간 안에 차가 있으면 무조건 v_low

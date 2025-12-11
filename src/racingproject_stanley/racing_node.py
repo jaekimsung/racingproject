@@ -185,7 +185,7 @@ class RacingNodeStanley(Node):
             v_ref = self.v_high
 
         if in_slow_zone:
-            v_ref = 13.0
+            v_ref = 12.0
 
         throttle, brake = self.speed_pid.step(v_ref, v_meas, dt)
 
