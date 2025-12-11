@@ -179,10 +179,13 @@ class RacingNodeStanley(Node):
                        (self.slow_y_min <= y <= self.slow_y_max)
         
         # 둘 중 하나라도 해당되면 저속 주행
-        if is_curved or in_slow_zone:
+        if is_curved:
             v_ref = self.v_low
         else:
             v_ref = self.v_high
+
+        if in_slow_zone:
+            v_ref = 13.0
 
         throttle, brake = self.speed_pid.step(v_ref, v_meas, dt)
 

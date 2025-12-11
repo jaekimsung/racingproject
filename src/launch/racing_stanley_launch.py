@@ -6,7 +6,7 @@ from launch_ros.actions import Node
 
 
 def generate_launch_description() -> LaunchDescription:
-    default_csv = Path(__file__).resolve().parent.parent / "racingproject" / "data" / "optimal.csv"
+    default_csv = Path(__file__).resolve().parent.parent / "racingproject" / "data" / "final_margin1m.csv"
 
     path_csv = LaunchConfiguration("path_csv")
 
@@ -19,18 +19,18 @@ def generate_launch_description() -> LaunchDescription:
     node_params = {
         "path_csv": path_csv,  # 기준 경로 CSV 파일 경로
         "lookahead_distance": 7.0,
-        "speed_kp": 1.0,  # 속도 PID Kp
+        "speed_kp": 0.8,  # 속도 PID Kp
         "speed_ki": 0.0,  # 속도 PID Ki
         "speed_kd": 0.01,  # 속도 PID Kd
-        "v_high": 15.5,  # 직선 구간 목표 속도 [m/s] 최대속도 56km/h = 15.5m/s
-        "v_low": 10.0,  # 코너 구간 목표 속도 [m/s]
-        "kappa_th": 0.06,  # 코너 판단용 곡률 임계값, 이 곡률 넘어가면 감속
+        "v_high": 18.0,  # 직선 구간 목표 속도 [m/s] 최대속도 56km/h = 15.5m/s
+        "v_low": 15.0,  # 코너 구간 목표 속도 [m/s]
+        "kappa_th": 0.08,  # 코너 판단용 곡률 임계값, 이 곡률 넘어가면 감속
 
         # 이 구간 안에 차가 있으면 무조건 v_low
-        "slow_x_min": 75.0,
-        "slow_x_max": 90.0,
-        "slow_y_min": 12.0,
-        "slow_y_max": 45.0,
+        "slow_x_min": -146.0,
+        "slow_x_max": -96.0,
+        "slow_y_min": 7.0,
+        "slow_y_max": 56.0,
         
         "control_dt": 0.05,  # 제어 주기/샘플 타임 [s]
         "max_steer_deg": 20.0,  # 최대 조향각 [deg]

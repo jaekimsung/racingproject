@@ -66,7 +66,7 @@ if __name__ == "__main__":
         visualize_path(file_path)
     else:
         # 여기에 테스트할 csv 파일 경로를 입력하세요
-        default_path = "/home/jaekimsung/mobilesystemcontrol/racingproject/src/racingproject/data/optimal.csv" 
+        default_path = "/home/jaekimsung/mobilesystemcontrol/racingproject/src/racingproject/data/final_margin1m.csv" 
         print(f"인자가 전달되지 않아 기본 경로를 시도합니다: {default_path}")
         print("사용법: python3 plot_path.py <csv_file_path>")
         visualize_path(default_path)

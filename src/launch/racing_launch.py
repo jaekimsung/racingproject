@@ -6,7 +6,7 @@ from launch_ros.actions import Node
 
 
 def generate_launch_description() -> LaunchDescription:
-    default_csv = Path(__file__).resolve().parent.parent / "racingproject" / "data" / "optimal.csv"
+    default_csv = Path(__file__).resolve().parent.parent / "racingproject" / "data" / "waypoints_final.csv"
 
     path_csv = LaunchConfiguration("path_csv")
 
@@ -18,11 +18,11 @@ def generate_launch_description() -> LaunchDescription:
 
     node_params = {
         "path_csv": path_csv,  # 기준 경로 CSV 파일 경로
-        "lookahead_points": 10,  # 제어 시 앞쪽으로 최소한 볼 포인트 개수 (포인트 간 간격 0.5m)
+        "lookahead_points": 30,  # 제어 시 앞쪽으로 최소한 볼 포인트 개수 (포인트 간 간격 0.5m)
         "braking_distance": 5.0,  # 감속 판단용 앞보기 거리 [m]
         
-        "speed_kp": 0.5,  # 속도 PID Kp
-        "speed_ki": 0.1,  # 속도 PID Ki
+        "speed_kp": 1.0,  # 속도 PID Kp
+        "speed_ki": 0.001,  # 속도 PID Ki
         "speed_kd": 0.01,  # 속도 PID Kd
         
         "v_high": 6.0,  # 직선 구간 목표 속도 [m/s] 최대속도 56km/h = 15.5m/s
@@ -30,10 +30,10 @@ def generate_launch_description() -> LaunchDescription:
         "kappa_th": 0.08,  # 코너 판단용 곡률 임계값, 이 곡률 넘어가면 감속 (높이면 감속 구간 줄어듦)
 
         # 이 구간 안에 차가 있으면 무조건 v_low
-        "slow_x_min": 75.0,
-        "slow_x_max": 90.0,
-        "slow_y_min": 12.0,
-        "slow_y_max": 45.0,
+        "slow_x_min": 0.0,
+        "slow_x_max": 0.0,
+        "slow_y_min": 0.0,
+        "slow_y_max": 0.0,
         
         "mpc_Np": 30,  # MPC 예측 지평선 길이
         "mpc_Nc": 5,  # MPC 제어 지평선 길이
